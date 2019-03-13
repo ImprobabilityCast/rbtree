@@ -1,4 +1,4 @@
 [[package]]
-name = "red_black_tree"
+name = "rbtree"
 version = "0.1.0"
 
