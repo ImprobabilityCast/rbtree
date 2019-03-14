@@ -1,7 +1,7 @@
 [package]
 name = "rbtree"
 version = "0.1.0"
-authors = ["ImprobabilityCast <segmentationfault3@outlook.com>"]
+authors = ["ImprobabilityCast"]
 edition = "2018"
 
 [dependencies]
