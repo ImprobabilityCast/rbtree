@@ -3,34 +3,44 @@ use std::cmp::Ordering;
 
 
 #[derive(Debug)]
-enum BTree<T: PartialOrd> {
+pub enum BTree<T: PartialOrd> {
     Empty,
-    Assemble(T, Box<BTree<T>>, Box<BTree<T>>)
+    Branch(Node<T>, Box<BTree<T>>, Box<BTree<T>>)
 }
 
+#[derive(Debug)]
+pub struct Node<T: PartialOrd> {
+    pub root: T,
+    is_red: bool
+}
 
+fn fix_insert<T: PartialOrd>(b: &mut BTree<T>) {
 
-fn insert<T: PartialOrd>(data: T, b: BTree<T>) -> BTree<T> {
+}
+
+pub fn insert<T: PartialOrd>(b: &mut BTree<T>, data: T) {
     use BTree::*;
     match b {
-        Empty => Assemble(data, Box::new(Empty), Box::new(Empty)),
-        Assemble(root, left, right) => {
-            if data.partial_cmp(&root) == Some(Ordering::Less) {
-                println!("left");
-                Assemble(root, Box::new(insert(data, *left)), right)
+        Empty => *b = Branch(Node::<T> {root: data, is_red: true}, Box::new(Empty), Box::new(Empty)),
+        Branch(node, left, right) => {
+            if data.partial_cmp(&node.root) == Some(Ordering::Less) {
+                insert(&mut *left, data);
             } else {
-                println!("right");  
-                Assemble(root, left, Box::new(insert(data, *right)))
+                insert(&mut *right, data);
             }
         }
     }
+    fix_insert(b);
 }
+
+
+// to see output run with:
+// cargo test -- --nocapture
 
 #[cfg(test)]
 mod test {
-    use crate::BTree;
+    use crate::*;
     use crate::BTree::*;
-    use crate::insert;
 
     #[test]
     fn test_ctor_empty() {
@@ -42,16 +52,17 @@ mod test {
     fn test_data_access() {
         let left = Box::new(Empty);
         let right = Box::new(Empty);
-        let b = Assemble(200, left, right);
+        let b = Branch(Node::<i32>{root: 200, is_red: true}, left, right);
         match b {
             Empty => println!("nothin'"),
-            Assemble(data, left, right) => println!("data: {}", data)
+            Branch(data, left, right) => println!("data: {}", data.root)
         }
     }
 
     #[test]
     fn test_insert_one() {
-        let b = insert(43, Empty);
+        let b = BTree::<i32>::Empty;
+        insert(&mut Empty, 43);
         println!("{:#?}", b);
     }
 
@@ -60,7 +71,7 @@ mod test {
         let mut b = Empty;
         let mut i = 0;
         while i < 2 {
-            b = insert(i, b);
+            insert(&mut b, i);
             i += 1;
         }
         println!("{:#?}", b);
@@ -71,7 +82,7 @@ mod test {
         let mut b = Empty;
         let mut i = 0;
         while i < 3 {
-            b = insert(i, b);
+            insert(&mut b, i);
             println!("{:#?}", b);
             i += 1;
         }
@@ -82,7 +93,7 @@ mod test {
         let mut b = Empty;
         let mut i = 0;
         while i < 7 {
-            b = insert(i, b);
+            insert(&mut b, i);
             i += 1;
         }
         println!("{:#?}", b);
