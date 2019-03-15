@@ -3,5 +3,6 @@ name = "rbtree"
 version = "0.1.0"
 authors = ["ImprobabilityCast"]
 edition = "2018"
+publish = false
 
 [dependencies]
