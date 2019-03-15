@@ -2,34 +2,41 @@ use std::cmp::PartialOrd;
 use std::cmp::Ordering;
 
 
+#[derive(PartialEq)]
 #[derive(Debug)]
 pub enum BTree<T: PartialOrd> {
     Empty,
-    Branch(Node<T>, Box<BTree<T>>, Box<BTree<T>>)
+    Branch (Node<T>)
 }
 
+#[derive(PartialEq)]
 #[derive(Debug)]
 pub struct Node<T: PartialOrd> {
+    is_red: bool,
     pub root: T,
-    is_red: bool
+    pub left: Box<BTree<T>>,
+    pub right: Box<BTree<T>>,
 }
+
+fn try_recolor<T: PartialOrd>(b: &mut BTree<T>) {
+
+} 
 
 fn fix_insert<T: PartialOrd>(b: &mut BTree<T>) {
-
+    try_recolor(b);
 }
 
-pub fn insert<T: PartialOrd>(b: &mut BTree<T>, data: T) {
+pub fn insert<T: PartialOrd>(mut b: &mut BTree<T>, data: T) {
     use BTree::*;
-    match b {
-        Empty => *b = Branch(Node::<T> {root: data, is_red: true}, Box::new(Empty), Box::new(Empty)),
-        Branch(node, left, right) => {
-            if data.partial_cmp(&node.root) == Some(Ordering::Less) {
-                insert(&mut *left, data);
-            } else {
-                insert(&mut *right, data);
-            }
+    
+    while let Branch(node) = b {
+        if data.partial_cmp(&node.root) == Some(Ordering::Less) {
+            b = &mut node.left;
+        } else {
+            b = &mut node.right;
         }
     }
+    *b = Branch(Node::<T> {is_red: true, root: data, left: Box::new(Empty), right: Box::new(Empty)});
     fix_insert(b);
 }
 
@@ -46,17 +53,6 @@ mod test {
     fn test_ctor_empty() {
         let a = BTree::<i32>::Empty;
         println!("{:#?}", a);
-    }
-
-    #[test]
-    fn test_data_access() {
-        let left = Box::new(Empty);
-        let right = Box::new(Empty);
-        let b = Branch(Node::<i32>{root: 200, is_red: true}, left, right);
-        match b {
-            Empty => println!("nothin'"),
-            Branch(data, left, right) => println!("data: {}", data.root)
-        }
     }
 
     #[test]
@@ -98,6 +94,5 @@ mod test {
         }
         println!("{:#?}", b);
     }
-
 }
 
