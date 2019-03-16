@@ -5,11 +5,13 @@ use std::cell::RefCell;
 use std::fmt;
 
 // I hate this type
-type BTreeOpt<T> = Option<Rc<RefCell<Node<T>>>>;
+type BTree<T> = Rc<RefCell<Node<T>>>;
+type BTreeOpt<T> = Option<BTree<T>>;
 
 
 pub struct Node<T: PartialOrd> {
     is_red: bool,
+    is_left: bool,
     root: T,
     left: BTreeOpt<T>,
     right: BTreeOpt<T>,
@@ -31,52 +33,99 @@ fn new_tree<T: PartialOrd>(n: Node<T>) -> BTreeOpt<T> {
     Some(Rc::new(RefCell::new(n)))
 }
 
-fn actual_insert<T: PartialOrd>(b: &mut BTreeOpt<T>, data: T, parent: BTreeOpt<T>) {
+// returns the parent of the inserted node, or None if there is none
+fn actual_insert<T: PartialOrd>(b: &mut BTreeOpt<T>, data: T, parent: BTreeOpt<T>, dir: bool) -> BTreeOpt<T> {
     if let Some(ref mut thing) = b {
         if data.partial_cmp(&thing.borrow().root) == Some(Ordering::Less) {
-            actual_insert(&mut thing.borrow_mut().left, data, Some(thing.clone()));
+            actual_insert(&mut thing.borrow_mut().left, data, Some(thing.clone()), true)
         } else {
-            actual_insert(&mut thing.borrow_mut().right, data, Some(thing.clone()));
+            actual_insert(&mut thing.borrow_mut().right, data, Some(thing.clone()), false)
         }
     } else {
-        let mut n = Node::<T> {is_red: true, root: data,
-                left: empty_tree(), right: empty_tree(), parent: parent};
-        *b = new_tree(n);
+
+
+        let n = Node::<T> {is_red: true, root: data,
+                left: empty_tree(), right: empty_tree(), parent: parent, is_left: dir};
+        let ret = Rc::new(RefCell::new(n));
+        *b = Some(ret.clone());
+
+        return ret.borrow().parent.clone();
     }
 }
 
-pub struct Frog {
-    pub prop: bool
+// returns true if tree cannot be recolored
+fn color<T: PartialOrd>(parent: &mut Node<T>, uncle: &BTreeOpt<T>) -> bool {
+    println!("try color");
+    if let Some(u_node) = uncle {
+        let mut mu_node = u_node.borrow_mut();
+        if mu_node.is_red {
+            println!("about to color");
+            mu_node.is_red = false;
+            parent.is_red = false;
+            return false;
+        }
+    }
+    return true;
 }
 
-fn try_recolor<T: PartialOrd>(b: &mut BTreeOpt<T>) {
-
+// returns sib of n
+fn sib<T: PartialOrd>(n: &Node<T>) -> BTreeOpt<T> {
+    if let Some(ref thing) = n.parent {
+        if n.is_left {
+            if let Some(ref thing2) = thing.borrow().right {
+                Some(thing2.clone())
+            } else {
+                None
+            }
+        } else {
+            if let Some(ref thing2) = thing.borrow().left {
+                Some(thing2.clone())
+            } else {
+                None
+            }
+        }
+    } else {
+        None
+    }
 }
 
-fn fix_insert<T: PartialOrd>(b: &mut BTreeOpt<T>) {
-    try_recolor(b);
-}
+// call this function if parent and one of its children are both red
+fn recolor<T: PartialOrd>(parent: &mut Node<T>) {
+    println!("parent is red");
+        
+    let uncle = sib(parent);
+    // color parent and uncle black
+    if color(parent, &uncle) {
+        println!("cannot recolor");
+        return;
+    }
 
+    if let Some(ref gp_node) = &(*parent).parent {
+        //color grandparent red
+        gp_node.borrow_mut().is_red = true;
+
+        // recolor up the tree if the grandparent has a parent
+        if let Some(ref mut ggp_node) = gp_node.borrow_mut().parent {
+            recolor(&mut ggp_node.borrow_mut());
+        }
+    }
+}
 
 
 pub fn insert<T: PartialOrd>(b: &mut BTreeOpt<T>, data: T) {
 
-    // need to get the parent node somehow
-    actual_insert(b, data, empty_tree());
 
-    // if let Branch(ref mut node) = p {
-    //     n = if data.partial_cmp(&node.root) == Some(Ordering::Less) {
-    //         node.left
-    //     } else {
-    //         node.right
-    //     };
-    // } else {
-    //     n = Box::new(Empty);
-    // }
+    let p = actual_insert(b, data, empty_tree(), true);
+    //let parent = &mut (*ins).borrow_mut().parent;
 
-
-
-    //fix_insert(b);
+    if let Some(ref node) = p { // prob err cant borrow
+        let mut m_node = node.borrow_mut();
+        if m_node.is_red {
+            println!("recoloring...");
+            recolor(&mut m_node);
+        }
+    };
+ 
 }
 
 
@@ -132,5 +181,18 @@ mod test {
         }
         println!("{:#?}", b);
     }
+
+    #[test]
+    fn test_recolor() {
+        let mut b: BTreeOpt<i32> = empty_tree();
+        let mut arr = [15, 5, 20, 10];
+        let mut idx = 0;
+        while idx < arr.len() {
+            insert(&mut b, arr[idx]);
+            idx += 1;
+        }
+        println!("{:#?}", b);
+    }
+
 }
 
