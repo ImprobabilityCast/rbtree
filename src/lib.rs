@@ -111,20 +111,83 @@ fn recolor<T: PartialOrd>(parent: &mut Node<T>) {
     }
 }
 
+fn swap_parent_left<T: PartialOrd>(tree: &mut BTree<T>) {
+    let m_tree = tree.borrow_mut();
+    if let Some(ref left_child) = m_tree.left {
+        if let Some(ref papa) = m_tree.parent {
+            let mut m_child = left_child.borrow_mut();
+
+            // make parent have the proper child
+            if m_child.is_left {
+                papa.borrow_mut().left = Some(left_child.clone());
+            } else {
+                papa.borrow_mut().right = Some(left_child.clone());
+            }
+
+            // parent of tree now parent of tree.left
+            m_child.parent = Some(papa.clone());
+        }
+    }
+}
+
+fn swap_parent_root<T: PartialOrd>(tree: &mut BTree<T>) {
+    let mut m_tree = tree.borrow_mut();
+    if let Some(ref left) = m_tree.left {
+        m_tree.parent = Some(left.clone());
+    }
+}
+
+fn wonky_swap<T: PartialOrd>(tree: &mut BTree<T>) {
+    let mut m_tree = tree.borrow_mut();
+    
+    // Complicated? Yes. Why? Because of stupid compiler rules and my own
+    // inexperience with Rust. It's frustrating.
+    if let Some(ref mut left) = m_tree.left {
+        let m_left = left.borrow_mut();
+        if let Some(ref right_of_left) = m_left.right {
+            let mut mr_left = right_of_left.borrow_mut();
+            mr_left.parent = Some((*tree).clone());
+            if let Some(ref thing) = mr_left.parent {
+                thing.borrow_mut().left = Some(right_of_left.clone());
+            }
+        }
+    }
+}
+
+fn stupid_borrow_checker<T: PartialOrd>(right_of_left: &mut BTreeOpt<T>, tree: &BTree<T>) {
+    if let Some(ref mut thing) = *right_of_left {
+        *thing = tree.clone();
+    }
+}
+
+fn right_rotate<T: PartialOrd>(tree: &mut BTree<T>) {
+    swap_parent_left(tree);
+    swap_parent_root(tree);
+    wonky_swap(tree);
+    if let Some(ref thing) = (**tree).borrow().parent {
+        stupid_borrow_checker(&mut (*thing).borrow_mut().right, tree);
+    }
+}
+
 
 pub fn insert<T: PartialOrd>(b: &mut BTreeOpt<T>, data: T) {
 
 
-    let p = actual_insert(b, data, empty_tree(), true);
-    //let parent = &mut (*ins).borrow_mut().parent;
+    // insert data and get the parent of the inserted node
+    let par = actual_insert(b, data, empty_tree(), true);
 
-    if let Some(ref node) = p { // prob err cant borrow
+    // try recolor
+    if let Some(ref node) = par {
         let mut m_node = node.borrow_mut();
         if m_node.is_red {
             println!("recoloring...");
             recolor(&mut m_node);
         }
     };
+
+    // try right-rotate recolor
+
+    // other fix
  
 }
 
@@ -192,6 +255,23 @@ mod test {
             idx += 1;
         }
         println!("{:#?}", b);
+    }
+
+    #[test]
+    fn test_right_rotate() {
+        let mut b: BTreeOpt<i32> = empty_tree();
+        let mut arr = [15, 5, 20, 10];
+        let mut idx = 0;
+        while idx < arr.len() {
+            insert(&mut b, arr[idx]);
+            idx += 1;
+        }
+        println!("before right rotate {:#?}", b);
+        if let Some(ref mut thing) = b {
+            right_rotate(thing);
+        }
+        println!("after right rotate {:#?}", b);
+
     }
 
 }
