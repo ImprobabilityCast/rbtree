@@ -1,42 +1,11 @@
 use std::cmp::PartialOrd;
 use std::cmp::Ordering;
 use std::vec::Vec;
+use std::fmt;
 
 // Inspired by the doubly linked list implementation 
 // found at http://bluss.github.io/ixlist/target/doc/src/ixlist/lib.rs.html
 // on 2019-03-20.
-
-// Adj List
-#[derive(Debug)]
-struct Graph<T> {
-	nodes: Vec<Node<T>>
-}
-
-#[derive(Debug)]
-struct Node<T> {
-	val: T,
-	idx: usize,
-    // siblings are stored in the order added
-	sibs: Vec<usize>
-}
-
-impl<T> Graph<T> {
-
-	pub fn new() -> Self {
-		Graph { nodes: Vec::new() }
-	}
-
-    pub fn add(&mut self, val: T, neighbors: Vec<usize>) {
-        let i = self.nodes.len();
-        let n = Node { val: val, idx: i, sibs: neighbors};
-        self.nodes.push(n);
-    }
-
-    pub fn size(&self) -> usize {
-        self.nodes.len()
-    }
-
-}
 
 enum INDEXES {
     PARENT = 0,
@@ -46,16 +15,37 @@ enum INDEXES {
     EMPTY = -1
 }
 
+struct Node<T> {
+	val: T,
+	idx: usize,
+	sibs: Vec<usize>
+}
+
+impl<T: fmt::Debug> fmt::Debug for Node<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(f, "val: {:?}, idx: {}, parent: {}, left: {}, right: {}",
+                self.val, self.idx, self.sibs[0] as isize, self.sibs[1] as isize,
+                self.sibs[2] as isize)
+    }
+}
+
 #[derive(Debug)]
 struct BTree<T: PartialOrd> {
     // Root of the tree shall be element 0, once it exists.
-    tree: Graph<T>
+    // This be a Adj List
+    // siblings are stored in the order added
+    nodes: Vec<Node<T>>
 }
 
 impl<T: PartialOrd> BTree<T> {
 
     pub fn new() -> Self {
-        BTree { tree: Graph::new() }
+        BTree { nodes: Vec::<Node<T>>::new() }
+    }
+
+    fn add(nodes: &mut Vec<Node<T>>, val: T, neighbors: Vec<usize>) {
+        let n = Node { val: val, idx: nodes.len(), sibs: neighbors};
+        nodes.push(n);
     }
 
     fn parent_idx(nodes: &Vec<Node<T>>, val: &T) -> usize {
@@ -75,11 +65,11 @@ impl<T: PartialOrd> BTree<T> {
     }
 
     pub fn insert(&mut self, val: T) {
-        let sibs = if self.tree.size() > 0 {
-            let idx = BTree::parent_idx(&self.tree.nodes, &val);
+        let sibs = if self.nodes.len() > 0 {
+            let idx = BTree::parent_idx(&self.nodes, &val);
             let mut new_sibs = vec![INDEXES::EMPTY as usize; 3];
-            let new_idx = self.tree.size();
-            let node = &mut self.tree.nodes[idx];
+            let new_idx = self.nodes.len();
+            let node = &mut self.nodes[idx];
 
             new_sibs[INDEXES::PARENT as usize] = idx;
 
@@ -94,7 +84,7 @@ impl<T: PartialOrd> BTree<T> {
             vec![INDEXES::EMPTY as usize; 3]
         };
         
-        self.tree.add(val, sibs);
+        BTree::add(&mut self.nodes, val, sibs);
     }
 }
 
