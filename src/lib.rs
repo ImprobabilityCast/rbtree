@@ -7,13 +7,11 @@ use std::fmt;
 // found at http://bluss.github.io/ixlist/target/doc/src/ixlist/lib.rs.html
 // on 2019-03-20.
 
-enum INDEXES {
-    PARENT = 0,
-    LEFT = 1,
-    RIGHT = 2,
-    // isize and usize have the same sizes, so -1 will be interpreted as std::usize::MAX
-    EMPTY = -1
-}
+const PARENT: usize = 0;
+const LEFT: usize = 1;
+const RIGHT: usize = 2;
+
+const EMPTY: usize = std::usize::MAX;
 
 #[derive(Debug, PartialEq)]
 enum COLORS {
@@ -38,50 +36,113 @@ impl<T: fmt::Debug> fmt::Debug for Node<T> {
 
 #[derive(Debug)]
 struct BTree<T: PartialOrd> {
-    // Root of the tree shall be element 0, once it exists.
     // This be a Adj List
-    // siblings are stored in the order added
-    nodes: Vec<Node<T>>
+    nodes: Vec<Node<T>>,
+    root_idx: usize
 }
 
 impl<T: PartialOrd> BTree<T> {
 
     pub fn new() -> Self {
-        BTree { nodes: Vec::<Node<T>>::new() }
+        BTree { nodes: Vec::<Node<T>>::new(), root_idx: 0 }
     }
 
+    fn btree_sib(nodes: &Vec<Node<T>>, idx: usize) -> usize {
+        let par_idx = nodes[idx].sibs[PARENT];
+        if par_idx == EMPTY { return EMPTY; }
+
+        // uncle will be left if parent was right, and vice versa
+        if nodes[idx].val.partial_cmp(&nodes[par_idx].val)
+                == Some(Ordering::Less) {
+            nodes[par_idx].sibs[RIGHT]
+        } else {
+            nodes[par_idx].sibs[LEFT]
+        }
+    }
+
+    // parent_idx must be in [0, nodes.len())
     fn recolor(nodes: &mut Vec<Node<T>>, parent_idx: usize) {
         // if both parent and uncle are red, recolor
         // else, cannot recolor
 
-        let g_par_idx = nodes[parent_idx].sibs[INDEXES::PARENT as usize];
-        if g_par_idx == (INDEXES::EMPTY as usize) { return; }
+        let g_par_idx = nodes[parent_idx].sibs[PARENT];
+        if g_par_idx == EMPTY { return; }
 
         // uncle will be left if parent was right, and vice versa
-        let uncle_idx = if nodes[parent_idx].val.partial_cmp(&nodes[g_par_idx].val)
-                == Some(Ordering::Less) {
-            nodes[g_par_idx].sibs[INDEXES::RIGHT as usize]
-        } else {
-            nodes[g_par_idx].sibs[INDEXES::LEFT as usize]
-        };
-        if uncle_idx == (INDEXES::EMPTY as usize) { return; }
+        let uncle_idx = BTree::btree_sib(nodes, parent_idx);
+        if uncle_idx == EMPTY { return; }
 
+        // the actual recoloring
         if nodes[uncle_idx].color == COLORS::RED {
             nodes[uncle_idx].color = COLORS::BLACK;
             nodes[g_par_idx].color = COLORS::RED;
             nodes[parent_idx].color = COLORS::BLACK;
 
-            let gg_par_idx = nodes[g_par_idx].sibs[INDEXES::PARENT as usize];
-            if gg_par_idx == (INDEXES::EMPTY as usize) { return; }
+            let gg_par_idx = nodes[g_par_idx].sibs[PARENT];
+            if gg_par_idx == EMPTY { return; }
 
             BTree::recolor(nodes, gg_par_idx);
         }
     }
 
-    fn adjust_tree(nodes: &mut Vec<Node<T>>, parent_idx: usize) {
-        if parent_idx != (INDEXES::EMPTY as usize) {
-            BTree::recolor(nodes, parent_idx);
+    // there must be a left node
+    fn right_rotate(b: &mut BTree<T>, idx: usize) {
+        let left_idx = b.nodes[idx].sibs[LEFT];
+
+        let right_of_left_idx = b.nodes[left_idx].sibs[RIGHT];
+        if right_of_left_idx != EMPTY {
+            b.nodes[right_of_left_idx].sibs[PARENT] = idx;
         }
+        b.nodes[idx].sibs[LEFT] = right_of_left_idx;
+
+        b.nodes[left_idx].sibs[PARENT] = b.nodes[idx].sibs[PARENT];
+        b.nodes[idx].sibs[PARENT] = left_idx;
+        b.nodes[left_idx].sibs[RIGHT] = idx;
+
+        // link parent to correct child
+        let p = b.nodes[left_idx].sibs[PARENT];
+        if p != EMPTY {
+            if b.nodes[left_idx].val.partial_cmp(&b.nodes[p].val) == Some(Ordering::Less) {
+                b.nodes[p].sibs[LEFT] = left_idx;
+            } else {
+                b.nodes[p].sibs[RIGHT] = left_idx;
+            }
+        }
+
+        // set the root if it got shifted
+        if idx == b.root_idx {
+            b.root_idx = left_idx;
+        }
+    }
+
+    fn adjust_from_left(b: &mut BTree<T>, parent_idx: usize) {
+        let g_par_idx = b.nodes[parent_idx].sibs[PARENT];
+        BTree::right_rotate(b, g_par_idx);
+        b.nodes[parent_idx].color = COLORS::BLACK;
+        // grandparent idx is now the uncle idx after the right rotate
+        b.nodes[g_par_idx].color = COLORS::RED;
+    }
+
+    fn adjust_tree(b: &mut BTree<T>, new_idx: usize) {
+        let parent_idx = b.nodes[new_idx].sibs[PARENT];
+        if parent_idx != EMPTY {
+            BTree::recolor(&mut b.nodes, parent_idx);
+
+            let uncle_idx = BTree::btree_sib(&b.nodes, parent_idx);
+
+            if (uncle_idx == EMPTY || b.nodes[uncle_idx].color == COLORS::BLACK)
+                    && b.nodes[parent_idx].color == COLORS::RED {
+                if b.nodes[parent_idx].sibs[LEFT] == new_idx {
+                    // grandparent must exist to call this
+                    BTree::adjust_from_left(b, parent_idx);
+                } else {
+                    // TODO: this bit
+                }
+            }
+        }
+
+        // balences a tree with only two nodes
+        b.nodes[b.root_idx].color = COLORS::BLACK;
     }
 
     fn add2list(nodes: &mut Vec<Node<T>>, val: T, neighbors: Vec<usize>) {
@@ -89,16 +150,16 @@ impl<T: PartialOrd> BTree<T> {
         nodes.push(n);
     }
 
-    fn parent_idx(nodes: &Vec<Node<T>>, val: &T) -> usize {
-        let mut node = &nodes[0];
-        let mut idx = 0;
+    fn parent_idx(b: &BTree<T>, val: &T) -> usize {
+        let mut node = &b.nodes[b.root_idx];
+        let mut idx = b.root_idx;
 
-        while idx != (INDEXES::EMPTY as usize) {
-            node = &nodes[idx];
+        while idx != (EMPTY) {
+            node = &b.nodes[idx];
             if val.partial_cmp(&node.val) == Some(Ordering::Less) {
-                idx = node.sibs[INDEXES::LEFT as usize];
+                idx = node.sibs[LEFT];
             } else {
-                idx = node.sibs[INDEXES::RIGHT as usize];
+                idx = node.sibs[RIGHT];
             }
         }
 
@@ -106,29 +167,29 @@ impl<T: PartialOrd> BTree<T> {
     }
 
     pub fn insert(&mut self, val: T) {
-        let mut idx = INDEXES::EMPTY as usize;
-        let sibs = if self.nodes.len() > 0 {
-            idx = BTree::parent_idx(&self.nodes, &val);
-            let mut new_sibs = vec![INDEXES::EMPTY as usize; 3];
-            let new_idx = self.nodes.len();
+        // new elements are appended to the end of the list
+        let new_idx = self.nodes.len();
+
+        let sibs = if new_idx > 0 {
+            let idx = BTree::parent_idx(&self, &val);
+            let mut new_sibs = vec![EMPTY; 3];
             let node = &mut self.nodes[idx];
 
-            new_sibs[INDEXES::PARENT as usize] = idx;
+            new_sibs[PARENT] = idx;
 
             if val.partial_cmp(&node.val) == Some(Ordering::Less) {
-                node.sibs[INDEXES::LEFT as usize] = new_idx;
+                node.sibs[LEFT] = new_idx;
             } else {
-                node.sibs[INDEXES::RIGHT as usize] = new_idx;
+                node.sibs[RIGHT] = new_idx;
             }
 
             new_sibs
         } else {
-            vec![INDEXES::EMPTY as usize; 3]
+            vec![EMPTY; 3]
         };
         
         BTree::add2list(&mut self.nodes, val, sibs);
-        
-        BTree::adjust_tree(&mut self.nodes, idx);
+        BTree::adjust_tree(self, new_idx);
     }
 }
 
@@ -190,6 +251,28 @@ mod test {
     }
 
     #[test]
+    fn test_fix_left_3() {
+        let mut b = new_tree::<i32>();
+        let mut i = 3;
+        while i > 0 {
+            b.insert(i);
+            i -= 1;
+        }
+        println!("{:#?}", b);
+    }
+
+    #[test]
+    fn test_fix_left_5() {
+        let mut b = new_tree::<i32>();
+        let mut i = 5;
+        while i > 0 {
+            b.insert(i);
+            i -= 1;
+        }
+        println!("{:#?}", b);
+    }
+
+    #[test]
     fn test_recolor() {
         let mut b = new_tree::<i32>();
         let arr = [15, 5, 20, 10];
@@ -203,17 +286,15 @@ mod test {
 
     // #[test]
     // fn test_right_rotate() {
-    //     let mut b = new_tree<i32>();
-    //     let mut arr = [15, 5, 20, 10];
+    //     let mut b = new_tree::<i32>();
+    //     let arr = [15, 5, 20, 10];
     //     let mut idx = 0;
     //     while idx < arr.len() {
     //         b.insert(arr[idx]);
     //         idx += 1;
     //     }
     //     println!("before right rotate {:#?}", b);
-    //     if let Some(ref mut thing) = b {
-    //         right_rotate(thing);
-    //     }
+    //     BTree::right_rotate(&mut thing, 0);
     //     println!("after right rotate {:#?}", b);
 
     // }
