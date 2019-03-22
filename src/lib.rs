@@ -47,9 +47,10 @@ impl<T: PartialOrd> BTree<T> {
         BTree { nodes: Vec::<Node<T>>::new(), root_idx: 0 }
     }
 
+    // parent node must exist
     fn btree_sib(nodes: &Vec<Node<T>>, idx: usize) -> usize {
         let par_idx = nodes[idx].sibs[PARENT];
-        if par_idx == EMPTY { return EMPTY; }
+        //if par_idx == EMPTY { return EMPTY; }
 
         // uncle will be left if parent was right, and vice versa
         if nodes[idx].val.partial_cmp(&nodes[par_idx].val)
@@ -85,6 +86,17 @@ impl<T: PartialOrd> BTree<T> {
         }
     }
 
+    fn link_par2child(nodes: &mut Vec<Node<T>>, child_idx: usize) {
+        let p = nodes[child_idx].sibs[PARENT];
+        if p != EMPTY {
+            if nodes[child_idx].val.partial_cmp(&nodes[p].val) == Some(Ordering::Less) {
+                nodes[p].sibs[LEFT] = child_idx;
+            } else {
+                nodes[p].sibs[RIGHT] = child_idx;
+            }
+        }
+    }
+
     // there must be a left node
     fn right_rotate(b: &mut BTree<T>, idx: usize) {
         let left_idx = b.nodes[idx].sibs[LEFT];
@@ -99,15 +111,7 @@ impl<T: PartialOrd> BTree<T> {
         b.nodes[idx].sibs[PARENT] = left_idx;
         b.nodes[left_idx].sibs[RIGHT] = idx;
 
-        // link parent to correct child
-        let p = b.nodes[left_idx].sibs[PARENT];
-        if p != EMPTY {
-            if b.nodes[left_idx].val.partial_cmp(&b.nodes[p].val) == Some(Ordering::Less) {
-                b.nodes[p].sibs[LEFT] = left_idx;
-            } else {
-                b.nodes[p].sibs[RIGHT] = left_idx;
-            }
-        }
+        BTree::link_par2child(&mut b.nodes, left_idx);
 
         // set the root if it got shifted
         if idx == b.root_idx {
@@ -115,33 +119,70 @@ impl<T: PartialOrd> BTree<T> {
         }
     }
 
-    fn adjust_from_left(b: &mut BTree<T>, parent_idx: usize) {
-        let g_par_idx = b.nodes[parent_idx].sibs[PARENT];
-        BTree::right_rotate(b, g_par_idx);
-        b.nodes[parent_idx].color = COLORS::BLACK;
-        // grandparent idx is now the uncle idx after the right rotate
-        b.nodes[g_par_idx].color = COLORS::RED;
+    // there must be a right node
+    fn left_rotate(b: &mut BTree<T>, idx: usize) {
+        let right_idx = b.nodes[idx].sibs[RIGHT];
+
+        let left_of_right_idx = b.nodes[right_idx].sibs[LEFT];
+        if left_of_right_idx != EMPTY {
+            b.nodes[left_of_right_idx].sibs[PARENT] = idx;
+        }
+        b.nodes[idx].sibs[RIGHT] = left_of_right_idx;
+
+        b.nodes[right_idx].sibs[PARENT] = b.nodes[idx].sibs[PARENT];
+        b.nodes[idx].sibs[PARENT] = right_idx;
+        b.nodes[right_idx].sibs[LEFT] = idx;
+
+        BTree::link_par2child(&mut b.nodes, right_idx);
+
+        // set the root if it got shifted
+        if idx == b.root_idx {
+            b.root_idx = right_idx;
+        }
     }
 
-    fn adjust_tree(b: &mut BTree<T>, new_idx: usize) {
+    fn adjust_subtrees(b: &mut BTree<T>, parent_idx: usize, child_idx: usize) {
+        let g_par_idx = b.nodes[parent_idx].sibs[PARENT];
+        if b.nodes[parent_idx].sibs[LEFT] == child_idx {
+            if b.nodes[g_par_idx].sibs[RIGHT] == parent_idx {
+                // left of parent, right of grandparnt
+                BTree::right_rotate(b, parent_idx);
+            }
+            // is now left of parent, left of grandparnt
+            BTree::right_rotate(b, g_par_idx);
+        } else {
+            if b.nodes[g_par_idx].sibs[LEFT] == parent_idx {
+                // right of parent, left of grandparnt
+                BTree::left_rotate(b, parent_idx);
+            }
+            // is now right of parent, right of grandparnt
+            BTree::left_rotate(b, g_par_idx);
+        }
+
+        // g_par_idx is now an uncle or sibling
+        b.nodes[g_par_idx].color = COLORS::RED;
+        let new_g_par_idx = b.nodes[g_par_idx].sibs[PARENT];
+        b.nodes[new_g_par_idx].color = COLORS::BLACK;
+    }
+
+    fn balence(b: &mut BTree<T>, new_idx: usize) {
         let parent_idx = b.nodes[new_idx].sibs[PARENT];
         if parent_idx != EMPTY {
             BTree::recolor(&mut b.nodes, parent_idx);
 
-            let uncle_idx = BTree::btree_sib(&b.nodes, parent_idx);
+            // check if there's a grandparent
+            if b.nodes[parent_idx].sibs[PARENT] != EMPTY {
+                let uncle_idx = BTree::btree_sib(&b.nodes, parent_idx);
 
-            if (uncle_idx == EMPTY || b.nodes[uncle_idx].color == COLORS::BLACK)
-                    && b.nodes[parent_idx].color == COLORS::RED {
-                if b.nodes[parent_idx].sibs[LEFT] == new_idx {
-                    // grandparent must exist to call this
-                    BTree::adjust_from_left(b, parent_idx);
-                } else {
-                    // TODO: this bit
+                // empty nodes count as black nodes
+                if (uncle_idx == EMPTY || b.nodes[uncle_idx].color == COLORS::BLACK)
+                        && b.nodes[parent_idx].color == COLORS::RED {
+                    BTree::adjust_subtrees(b, parent_idx, new_idx);
                 }
             }
         }
 
-        // balences a tree with only two nodes
+        // the root shall always be black
         b.nodes[b.root_idx].color = COLORS::BLACK;
     }
 
@@ -189,7 +230,7 @@ impl<T: PartialOrd> BTree<T> {
         };
         
         BTree::add2list(&mut self.nodes, val, sibs);
-        BTree::adjust_tree(self, new_idx);
+        BTree::balence(self, new_idx);
     }
 }
 
@@ -268,6 +309,17 @@ mod test {
         while i > 0 {
             b.insert(i);
             i -= 1;
+        }
+        println!("{:#?}", b);
+    }
+
+        #[test]
+    fn test_fix_right_5() {
+        let mut b = new_tree::<i32>();
+        let mut i = 0;
+        while i < 5 {
+            b.insert(i);
+            i += 1;
         }
         println!("{:#?}", b);
     }
