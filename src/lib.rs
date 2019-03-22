@@ -35,7 +35,7 @@ impl<T: fmt::Debug> fmt::Debug for Node<T> {
 }
 
 #[derive(Debug)]
-struct BTree<T: PartialOrd> {
+pub struct BTree<T: PartialOrd> {
     // This be a Adj List
     nodes: Vec<Node<T>>,
     root_idx: usize
@@ -241,6 +241,58 @@ impl<T: PartialOrd> BTree<T> {
 mod test {
     use crate::*;
 
+    fn assert_colors<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) {
+        let left_idx = nodes[root_idx].sibs[LEFT];
+        let right_idx = nodes[root_idx].sibs[RIGHT];
+
+        if nodes[root_idx].color == COLORS::RED {
+            assert!(left_idx == EMPTY || nodes[left_idx].color == COLORS::BLACK,
+                    "{} is a red left child of red node {}", left_idx, root_idx);
+                    
+            assert!(right_idx == EMPTY || nodes[right_idx].color == COLORS::BLACK,
+                    "{} is a red right child of red node {}", right_idx, root_idx);
+        }
+
+        if left_idx != EMPTY {
+            assert_colors(&nodes, left_idx);
+        }
+        if right_idx != EMPTY {
+            assert_colors(&nodes, right_idx);
+        }
+    }
+
+    fn assert_black_count<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) -> usize {
+        let left_idx = nodes[root_idx].sibs[LEFT];
+        let right_idx = nodes[root_idx].sibs[RIGHT];
+
+        let count = if nodes[root_idx].color == COLORS::BLACK {
+            1
+        } else {
+            0
+        };
+
+        let left = if left_idx != EMPTY {
+             assert_black_count(&nodes, left_idx)
+        } else {
+            1
+        };
+
+        let right = if right_idx != EMPTY {
+            assert_black_count(&nodes, right_idx)
+        } else {
+            1
+        };
+
+        assert!(left == right, "root_idx: {}, black node counts {{right: {}, left: {}}}", 
+                root_idx, right, left);
+        return count + left;
+    }
+
+    fn assert_rbtree<T: PartialOrd>(b: &BTree<T>) {
+        assert_colors::<T>(&b.nodes, b.root_idx);
+        assert_black_count::<T>(&b.nodes, b.root_idx);
+    }
+
     fn new_tree<T: PartialOrd>() -> BTree<T> {
         BTree::new()
     }
@@ -336,20 +388,29 @@ mod test {
         println!("{:#?}", b);
     }
 
-    // #[test]
-    // fn test_right_rotate() {
-    //     let mut b = new_tree::<i32>();
-    //     let arr = [15, 5, 20, 10];
-    //     let mut idx = 0;
-    //     while idx < arr.len() {
-    //         b.insert(arr[idx]);
-    //         idx += 1;
-    //     }
-    //     println!("before right rotate {:#?}", b);
-    //     BTree::right_rotate(&mut thing, 0);
-    //     println!("after right rotate {:#?}", b);
+    #[test]
+    fn test_10() {
+        let mut b = new_tree::<i32>();
+        let mut i = 0;
+        while i < 10 {
+            b.insert(i * 7 + (-i % 2) * 13);
+            i += 1;
+        }
+        println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
+    }
 
-    // }
+    #[test]
+    fn test_20() {
+        let mut b = new_tree::<i32>();
+        let mut i = 0;
+        while i < 20 {
+            b.insert(i * 7 + (-i % 2) * 13);
+            i += 1;
+        }
+        println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
+    }
 
 }
 
