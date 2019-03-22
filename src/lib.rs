@@ -62,16 +62,16 @@ impl<T: PartialOrd> BTree<T> {
     }
 
     // parent_idx must be in [0, nodes.len())
-    fn recolor(nodes: &mut Vec<Node<T>>, parent_idx: usize) {
+    fn recolor(nodes: &mut Vec<Node<T>>, parent_idx: usize) -> usize {
         // if both parent and uncle are red, recolor
         // else, cannot recolor
+        if nodes[parent_idx].color != COLORS::RED { return parent_idx; }
 
         let g_par_idx = nodes[parent_idx].sibs[PARENT];
-        if g_par_idx == EMPTY { return; }
+        if g_par_idx == EMPTY { return parent_idx; }
 
-        // uncle will be left if parent was right, and vice versa
         let uncle_idx = BTree::btree_sib(nodes, parent_idx);
-        if uncle_idx == EMPTY { return; }
+        if uncle_idx == EMPTY { return parent_idx; }
 
         // the actual recoloring
         if nodes[uncle_idx].color == COLORS::RED {
@@ -79,10 +79,12 @@ impl<T: PartialOrd> BTree<T> {
             nodes[g_par_idx].color = COLORS::RED;
             nodes[parent_idx].color = COLORS::BLACK;
 
-            let gg_par_idx = nodes[g_par_idx].sibs[PARENT];
-            if gg_par_idx == EMPTY { return; }
+            // let gg_par_idx = nodes[g_par_idx].sibs[PARENT];
+            // if gg_par_idx == EMPTY { return; }
 
-            BTree::recolor(nodes, gg_par_idx);
+            return BTree::recolor(nodes, g_par_idx);
+        } else {
+            return parent_idx;
         }
     }
 
@@ -166,9 +168,9 @@ impl<T: PartialOrd> BTree<T> {
     }
 
     fn balence(b: &mut BTree<T>, new_idx: usize) {
-        let parent_idx = b.nodes[new_idx].sibs[PARENT];
+        let mut parent_idx = b.nodes[new_idx].sibs[PARENT];
         if parent_idx != EMPTY {
-            BTree::recolor(&mut b.nodes, parent_idx);
+            parent_idx = BTree::recolor(&mut b.nodes, parent_idx);
 
             // check if there's a grandparent
             if b.nodes[parent_idx].sibs[PARENT] != EMPTY {
@@ -308,6 +310,7 @@ mod test {
         let mut b = new_tree::<i32>();
         b.insert(43);
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -319,6 +322,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -330,6 +334,7 @@ mod test {
             println!("{:#?}", b);
             i += 1;
         }
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -341,6 +346,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -352,6 +358,7 @@ mod test {
             i -= 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -363,6 +370,7 @@ mod test {
             i -= 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
         #[test]
@@ -374,6 +382,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -386,6 +395,19 @@ mod test {
             idx += 1;
         }
         println!("{:#?}", b);
+        assert_rbtree::<i32>(&b);
+    }
+
+    #[test]
+    fn test_8() {
+        let mut b = new_tree::<i32>();
+        let mut i = 0;
+        while i < 8 {
+            b.insert(i * 7 + (-i % 2) * 13);
+            i += 1;
+            println!("{:#?}", b);
+            assert_rbtree::<i32>(&b);
+        }
     }
 
     #[test]
