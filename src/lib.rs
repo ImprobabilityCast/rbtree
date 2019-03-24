@@ -42,7 +42,62 @@ pub struct BTree<T: PartialOrd> {
     root_idx: usize
 }
 
-impl<T: PartialOrd> BTree<T> {
+fn assert_colors<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) {
+    let left_idx = nodes[root_idx].sibs[LEFT];
+    let right_idx = nodes[root_idx].sibs[RIGHT];
+
+    if nodes[root_idx].color == COLORS::RED {
+        assert!(left_idx == EMPTY || nodes[left_idx].color == COLORS::BLACK,
+                "{} is a red left child of red node {}", left_idx, root_idx);
+                
+        assert!(right_idx == EMPTY || nodes[right_idx].color == COLORS::BLACK,
+                "{} is a red right child of red node {}", right_idx, root_idx);
+    }
+
+    if left_idx != EMPTY {
+        assert_colors(&nodes, left_idx);
+    }
+    if right_idx != EMPTY {
+        assert_colors(&nodes, right_idx);
+    }
+}
+
+fn assert_black_count<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) -> usize {
+    let left_idx = nodes[root_idx].sibs[LEFT];
+    let right_idx = nodes[root_idx].sibs[RIGHT];
+
+    let count = if nodes[root_idx].color == COLORS::BLACK {
+        1
+    } else {
+        0
+    };
+
+    let left = if left_idx != EMPTY {
+            assert_black_count(&nodes, left_idx)
+    } else {
+        1
+    };
+
+    let right = if right_idx != EMPTY {
+        assert_black_count(&nodes, right_idx)
+    } else {
+        1
+    };
+
+    assert!(left == right, "root_idx: {}, black node counts {{right: {}, left: {}}}", 
+            root_idx, right, left);
+    return count + left;
+}
+
+fn assert_is_rbtree<T: PartialOrd + fmt::Debug>(b: &BTree<T>) -> bool {
+    println!("checking: {:#?}", b);
+    assert_colors::<T>(&b.nodes, b.root_idx);
+    assert_black_count::<T>(&b.nodes, b.root_idx);
+    // this will only execute if the above tests pass
+    return true;
+}
+
+impl<T: PartialOrd + fmt::Debug> BTree<T> {
 
     pub fn new() -> Self {
         BTree { nodes: Vec::<Node<T>>::new(), root_idx: 0 }
@@ -62,28 +117,39 @@ impl<T: PartialOrd> BTree<T> {
         }
     }
 
-    // parent_idx must be in [0, nodes.len())
-    fn recolor(nodes: &mut Vec<Node<T>>, parent_idx: usize) -> usize {
+    fn is_black(n: &Vec<Node<T>>, idx: usize) -> bool {
+        // empty nodes count as black nodes
+        idx == EMPTY || n[idx].color == COLORS::BLACK
+    }
+
+    // this function assumes the node at new_idx is red
+    // new_idx must be in [0, nodes.len()), e.g. not EMPTY
+    // this function will never return EMPTY
+    fn recolor(nodes: &mut Vec<Node<T>>, mut new_idx: usize) -> usize {
         // if both parent and uncle are red, recolor
         // else, cannot recolor
-        if nodes[parent_idx].color != COLORS::RED { return parent_idx; }
+        
+        let mut parent_idx = nodes[new_idx].sibs[PARENT];
 
-        let g_par_idx = nodes[parent_idx].sibs[PARENT];
-        if g_par_idx == EMPTY { return parent_idx; }
+        // must have a grandparent to have an uncle
+        while parent_idx != EMPTY && nodes[parent_idx].sibs[PARENT] != EMPTY
+                && nodes[parent_idx].color == COLORS::RED {
+            
+            let g_par_idx = nodes[parent_idx].sibs[PARENT];
+            let uncle_idx = BTree::btree_sib(nodes, parent_idx);
+            // if uncle is black, cannot recolor
+            if BTree::is_black(nodes, uncle_idx) { break; }
 
-        let uncle_idx = BTree::btree_sib(nodes, parent_idx);
-        if uncle_idx == EMPTY { return parent_idx; }
-
-        // the actual recoloring
-        if nodes[uncle_idx].color == COLORS::RED {
             nodes[uncle_idx].color = COLORS::BLACK;
             nodes[g_par_idx].color = COLORS::RED;
             nodes[parent_idx].color = COLORS::BLACK;
 
-            return BTree::recolor(nodes, g_par_idx);
-        } else {
-            return parent_idx;
+            new_idx = g_par_idx;
+            parent_idx = nodes[new_idx].sibs[PARENT];
         }
+
+        // return however far this function was able to go.
+        return new_idx;
     }
 
     fn link_par2child(nodes: &mut Vec<Node<T>>, child_idx: usize) {
@@ -141,8 +207,9 @@ impl<T: PartialOrd> BTree<T> {
         }
     }
 
-    fn adjust_subtrees(b: &mut BTree<T>, parent_idx: usize, child_idx: usize) {
-        let g_par_idx = b.nodes[parent_idx].sibs[PARENT];
+    fn adjust_subtrees(b: &mut BTree<T>, g_par_idx: usize,
+            parent_idx: usize, child_idx: usize) {
+        
         if b.nodes[parent_idx].sibs[LEFT] == child_idx {
             if b.nodes[g_par_idx].sibs[RIGHT] == parent_idx {
                 // left of parent, right of grandparnt
@@ -169,25 +236,27 @@ impl<T: PartialOrd> BTree<T> {
         b.nodes[new_g_par_idx].color = COLORS::BLACK;
     }
 
-    fn balence(b: &mut BTree<T>, new_idx: usize) {
-        let mut parent_idx = b.nodes[new_idx].sibs[PARENT];
-        if parent_idx != EMPTY {
-            parent_idx = BTree::recolor(&mut b.nodes, parent_idx);
-
-            // check if there's a grandparent
-            if b.nodes[parent_idx].sibs[PARENT] != EMPTY {
-                let uncle_idx = BTree::btree_sib(&b.nodes, parent_idx);
-
-                // empty nodes count as black nodes
-                if (uncle_idx == EMPTY || b.nodes[uncle_idx].color == COLORS::BLACK)
-                        && b.nodes[parent_idx].color == COLORS::RED {
-                    BTree::adjust_subtrees(b, parent_idx, new_idx);
-                }
-            }
-        }
-
-        // the root shall always be black
+    fn balence(b: &mut BTree<T>, mut new_idx: usize) {
+        new_idx = BTree::recolor(&mut b.nodes, new_idx);
+        // make sure the first node inserted is black
         b.nodes[b.root_idx].color = COLORS::BLACK;
+
+        // if black, no need to adjust the tree
+        if BTree::is_black(&b.nodes, new_idx) { return; }
+
+        let parent_idx = b.nodes[new_idx].sibs[PARENT];
+        // if parent is black, no red-red path, so don't adjust the tree
+        if BTree::is_black(&b.nodes, parent_idx) { return; }
+
+        // need a grandparent to have an uncle
+        let g_par_idx = b.nodes[parent_idx].sibs[PARENT];
+        if g_par_idx == EMPTY { return; }
+
+        let uncle_idx = BTree::btree_sib(&b.nodes, parent_idx);
+        
+        if BTree::is_black(&b.nodes, uncle_idx) {
+            BTree::adjust_subtrees(b, g_par_idx, parent_idx, new_idx);
+        }
     }
 
     fn add2list(nodes: &mut Vec<Node<T>>, val: T, neighbors: Vec<usize>) {
@@ -235,6 +304,7 @@ impl<T: PartialOrd> BTree<T> {
         
         BTree::add2list(&mut self.nodes, val, sibs);
         BTree::balence(self, new_idx);
+        debug_assert!(assert_is_rbtree(&self));
     }
 
     pub fn size(&mut self) -> usize{
@@ -252,60 +322,30 @@ mod test {
     use std::fs::File;
     use crate::*;
 
-    fn assert_colors<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) {
-        let left_idx = nodes[root_idx].sibs[LEFT];
-        let right_idx = nodes[root_idx].sibs[RIGHT];
-
-        if nodes[root_idx].color == COLORS::RED {
-            assert!(left_idx == EMPTY || nodes[left_idx].color == COLORS::BLACK,
-                    "{} is a red left child of red node {}", left_idx, root_idx);
-                    
-            assert!(right_idx == EMPTY || nodes[right_idx].color == COLORS::BLACK,
-                    "{} is a red right child of red node {}", right_idx, root_idx);
-        }
-
-        if left_idx != EMPTY {
-            assert_colors(&nodes, left_idx);
-        }
-        if right_idx != EMPTY {
-            assert_colors(&nodes, right_idx);
-        }
-    }
-
-    fn assert_black_count<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) -> usize {
-        let left_idx = nodes[root_idx].sibs[LEFT];
-        let right_idx = nodes[root_idx].sibs[RIGHT];
-
-        let count = if nodes[root_idx].color == COLORS::BLACK {
-            1
-        } else {
-            0
-        };
-
-        let left = if left_idx != EMPTY {
-             assert_black_count(&nodes, left_idx)
-        } else {
-            1
-        };
-
-        let right = if right_idx != EMPTY {
-            assert_black_count(&nodes, right_idx)
-        } else {
-            1
-        };
-
-        assert!(left == right, "root_idx: {}, black node counts {{right: {}, left: {}}}", 
-                root_idx, right, left);
-        return count + left;
-    }
-
-    fn assert_is_rbtree<T: PartialOrd>(b: &BTree<T>) {
-        assert_colors::<T>(&b.nodes, b.root_idx);
-        assert_black_count::<T>(&b.nodes, b.root_idx);
-    }
-
-    fn new_tree<T: PartialOrd>() -> BTree<T> {
+    fn new_tree<T: PartialOrd + fmt::Debug>() -> BTree<T> {
         BTree::new()
+    }
+
+    fn from_file(name: &str) -> Result<()> {
+        let mut b = new_tree::<char>();
+        let mut s = String::new();
+        let mut f = File::open(name)?;
+
+        f.read_to_string(&mut s)?;
+        while s.len() > 0 {
+            if let Some(ch) = s.pop() {
+                println!("inserting: {} to: {:#?}", ch, b);
+                b.insert(ch);
+            } else {
+                break;
+            }
+            println!("size: {}", b.size());
+        }
+
+        println!("{:#?}", b);
+        assert_is_rbtree::<char>(&b);
+
+        Ok(())
     }
 
     #[test]
@@ -318,7 +358,6 @@ mod test {
     fn test_insert_1() {
         let mut b = new_tree::<i32>();
         b.insert(43);
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
@@ -330,7 +369,6 @@ mod test {
             b.insert(i);
             i += 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
@@ -354,7 +392,6 @@ mod test {
             b.insert(i);
             i += 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
@@ -366,7 +403,6 @@ mod test {
             b.insert(i);
             i -= 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
@@ -378,11 +414,10 @@ mod test {
             b.insert(i);
             i -= 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
-        #[test]
+    #[test]
     fn test_fix_right_5() {
         let mut b = new_tree::<i32>();
         let mut i = 0;
@@ -390,12 +425,23 @@ mod test {
             b.insert(i);
             i += 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
-    fn test_recolor() {
+    fn test_double_red_1() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 0];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
+        assert_is_rbtree::<i32>(&b);
+    }
+
+    #[test]
+    fn test_double_red_2() {
         let mut b = new_tree::<i32>();
         let arr = [15, 5, 20, 10];
         let mut idx = 0;
@@ -403,7 +449,30 @@ mod test {
             b.insert(arr[idx]);
             idx += 1;
         }
-        println!("{:#?}", b);
+        assert_is_rbtree::<i32>(&b);
+    }
+
+    #[test]
+    fn test_double_red_3() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 17];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
+        assert_is_rbtree::<i32>(&b);
+    }
+
+    #[test]
+    fn test_double_red_4() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 30];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
         assert_is_rbtree::<i32>(&b);
     }
 
@@ -427,31 +496,17 @@ mod test {
             b.insert(i * 7 + (-i % 2) * 13);
             i += 1;
         }
-        println!("{:#?}", b);
         assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
     fn test_big() -> Result<()> {
-        let mut b = new_tree::<char>();
-        let mut s = String::new();
-        let mut f = File::open(".gitignore")?;
+        from_file(".gitignore")
+    }
 
-        f.read_to_string(&mut s)?;
-        while s.len() > 0 {
-            if let Some(ch) = s.pop() {
-                println!("inserting: {} to: {:#?}", ch, b);
-                b.insert(ch);
-            } else {
-                break;
-            }
-            println!("size: {}", b.size());
-        }
-
-        println!("{:#?}", b);
-        assert_is_rbtree::<char>(&b);
-
-        Ok(())
+    #[test]
+    fn test_bigger() -> Result<()> {
+        from_file("src/lib.rs")
     }
 
 }
