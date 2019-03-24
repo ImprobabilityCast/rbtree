@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::vec::Vec;
 use std::fmt;
 
+
 // Inspired by the doubly linked list implementation 
 // found at http://bluss.github.io/ixlist/target/doc/src/ixlist/lib.rs.html
 // on 2019-03-20.
@@ -79,9 +80,6 @@ impl<T: PartialOrd> BTree<T> {
             nodes[g_par_idx].color = COLORS::RED;
             nodes[parent_idx].color = COLORS::BLACK;
 
-            // let gg_par_idx = nodes[g_par_idx].sibs[PARENT];
-            // if gg_par_idx == EMPTY { return; }
-
             return BTree::recolor(nodes, g_par_idx);
         } else {
             return parent_idx;
@@ -149,16 +147,20 @@ impl<T: PartialOrd> BTree<T> {
             if b.nodes[g_par_idx].sibs[RIGHT] == parent_idx {
                 // left of parent, right of grandparnt
                 BTree::right_rotate(b, parent_idx);
+                // now right of parent and right of grandparent
+                BTree::left_rotate(b, g_par_idx);
+            } else {
+                BTree::right_rotate(b, g_par_idx);
             }
-            // is now left of parent, left of grandparnt
-            BTree::right_rotate(b, g_par_idx);
         } else {
             if b.nodes[g_par_idx].sibs[LEFT] == parent_idx {
                 // right of parent, left of grandparnt
                 BTree::left_rotate(b, parent_idx);
+                // now left of parent and left of grandparent
+                BTree::right_rotate(b, g_par_idx);
+            } else {
+                BTree::left_rotate(b, g_par_idx);
             }
-            // is now right of parent, right of grandparnt
-            BTree::left_rotate(b, g_par_idx);
         }
 
         // g_par_idx is now an uncle or sibling
@@ -234,6 +236,10 @@ impl<T: PartialOrd> BTree<T> {
         BTree::add2list(&mut self.nodes, val, sibs);
         BTree::balence(self, new_idx);
     }
+
+    pub fn size(&mut self) -> usize{
+        self.nodes.len()
+    }
 }
 
 // to see output run with:
@@ -241,6 +247,9 @@ impl<T: PartialOrd> BTree<T> {
 
 #[cfg(test)]
 mod test {
+    use std::io::prelude::*;
+    use std::io::Result;
+    use std::fs::File;
     use crate::*;
 
     fn assert_colors<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) {
@@ -290,7 +299,7 @@ mod test {
         return count + left;
     }
 
-    fn assert_rbtree<T: PartialOrd>(b: &BTree<T>) {
+    fn assert_is_rbtree<T: PartialOrd>(b: &BTree<T>) {
         assert_colors::<T>(&b.nodes, b.root_idx);
         assert_black_count::<T>(&b.nodes, b.root_idx);
     }
@@ -310,7 +319,7 @@ mod test {
         let mut b = new_tree::<i32>();
         b.insert(43);
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -322,7 +331,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -334,7 +343,7 @@ mod test {
             println!("{:#?}", b);
             i += 1;
         }
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -346,7 +355,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -358,7 +367,7 @@ mod test {
             i -= 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -370,7 +379,7 @@ mod test {
             i -= 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
         #[test]
@@ -382,7 +391,7 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -395,7 +404,7 @@ mod test {
             idx += 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -406,20 +415,8 @@ mod test {
             b.insert(i * 7 + (-i % 2) * 13);
             i += 1;
             println!("{:#?}", b);
-            assert_rbtree::<i32>(&b);
+            assert_is_rbtree::<i32>(&b);
         }
-    }
-
-    #[test]
-    fn test_10() {
-        let mut b = new_tree::<i32>();
-        let mut i = 0;
-        while i < 10 {
-            b.insert(i * 7 + (-i % 2) * 13);
-            i += 1;
-        }
-        println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
     }
 
     #[test]
@@ -431,8 +428,30 @@ mod test {
             i += 1;
         }
         println!("{:#?}", b);
-        assert_rbtree::<i32>(&b);
+        assert_is_rbtree::<i32>(&b);
+    }
+
+    #[test]
+    fn test_big() -> Result<()> {
+        let mut b = new_tree::<char>();
+        let mut s = String::new();
+        let mut f = File::open(".gitignore")?;
+
+        f.read_to_string(&mut s)?;
+        while s.len() > 0 {
+            if let Some(ch) = s.pop() {
+                println!("inserting: {} to: {:#?}", ch, b);
+                b.insert(ch);
+            } else {
+                break;
+            }
+            println!("size: {}", b.size());
+        }
+
+        println!("{:#?}", b);
+        assert_is_rbtree::<char>(&b);
+
+        Ok(())
     }
 
 }
-
