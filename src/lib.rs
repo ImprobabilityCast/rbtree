@@ -8,6 +8,8 @@ use std::fmt;
 // found at http://bluss.github.io/ixlist/target/doc/src/ixlist/lib.rs.html
 // on 2019-03-20.
 
+const DEBUG: bool = false;
+
 const PARENT: usize = 0;
 const LEFT: usize = 1;
 const RIGHT: usize = 2;
@@ -35,9 +37,9 @@ impl<T: fmt::Debug> fmt::Debug for Node<T> {
     }
 }
 
+// A red-black tree represented with an adjacency list
 #[derive(Debug)]
 pub struct BTree<T: PartialOrd> {
-    // This be a Adj List
     nodes: Vec<Node<T>>,
     root_idx: usize
 }
@@ -90,7 +92,7 @@ fn assert_black_count<T: PartialOrd>(nodes: &Vec<Node<T>>, root_idx: usize) -> u
 }
 
 fn assert_is_rbtree<T: PartialOrd + fmt::Debug>(b: &BTree<T>) -> bool {
-    println!("checking: {:#?}", b);
+    if DEBUG { println!("checking: {:#?}", b); }
     assert_colors::<T>(&b.nodes, b.root_idx);
     assert_black_count::<T>(&b.nodes, b.root_idx);
     // this will only execute if the above tests pass
@@ -106,14 +108,12 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     // parent node must exist
     fn btree_sib(nodes: &Vec<Node<T>>, idx: usize) -> usize {
         let par_idx = nodes[idx].sibs[PARENT];
-        //if par_idx == EMPTY { return EMPTY; }
 
         // uncle will be left if parent was right, and vice versa
-        if nodes[idx].val.partial_cmp(&nodes[par_idx].val)
-                == Some(Ordering::Less) {
-            nodes[par_idx].sibs[RIGHT]
-        } else {
+        if nodes[par_idx].sibs[RIGHT] == idx {
             nodes[par_idx].sibs[LEFT]
+        } else {
+            nodes[par_idx].sibs[RIGHT]
         }
     }
 
@@ -152,10 +152,11 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         return new_idx;
     }
 
+    // links the parent node with the proper child
     fn link_par2child(nodes: &mut Vec<Node<T>>, child_idx: usize) {
         let p = nodes[child_idx].sibs[PARENT];
         if p != EMPTY {
-            if nodes[child_idx].val.partial_cmp(&nodes[p].val) == Some(Ordering::Less) {
+            if nodes[child_idx].val.lt(&nodes[p].val) {
                 nodes[p].sibs[LEFT] = child_idx;
             } else {
                 nodes[p].sibs[RIGHT] = child_idx;
@@ -268,9 +269,10 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         let mut node = &b.nodes[b.root_idx];
         let mut idx = b.root_idx;
 
-        while idx != (EMPTY) {
+        while idx != EMPTY {
             node = &b.nodes[idx];
-            if val.partial_cmp(&node.val) == Some(Ordering::Less) {
+
+            if val.lt(&node.val) {
                 idx = node.sibs[LEFT];
             } else {
                 idx = node.sibs[RIGHT];
@@ -291,7 +293,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
 
             new_sibs[PARENT] = idx;
 
-            if val.partial_cmp(&node.val) == Some(Ordering::Less) {
+            if val.lt(&node.val) {
                 node.sibs[LEFT] = new_idx;
             } else {
                 node.sibs[RIGHT] = new_idx;
@@ -334,15 +336,13 @@ mod test {
         f.read_to_string(&mut s)?;
         while s.len() > 0 {
             if let Some(ch) = s.pop() {
-                println!("inserting: {} to: {:#?}", ch, b);
+                if DEBUG { println!("inserting: {} to: {:#?}", ch, b); }
                 b.insert(ch);
             } else {
                 break;
             }
             println!("size: {}", b.size());
         }
-
-        println!("{:#?}", b);
         assert_is_rbtree::<char>(&b);
 
         Ok(())
