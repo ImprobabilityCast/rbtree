@@ -1,5 +1,4 @@
 use std::cmp::PartialOrd;
-use std::cmp::Ordering;
 use std::vec::Vec;
 use std::fmt;
 
@@ -156,7 +155,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     fn link_par2child(nodes: &mut Vec<Node<T>>, child_idx: usize) {
         let p = nodes[child_idx].sibs[PARENT];
         if p != EMPTY {
-            if nodes[child_idx].val.lt(&nodes[p].val) {
+            if nodes[child_idx].val < nodes[p].val {
                 nodes[p].sibs[LEFT] = child_idx;
             } else {
                 nodes[p].sibs[RIGHT] = child_idx;
@@ -261,7 +260,12 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     }
 
     fn add2list(nodes: &mut Vec<Node<T>>, val: T, neighbors: Vec<usize>) {
-        let n = Node { val: val, color: COLORS::RED, idx: nodes.len(), sibs: neighbors};
+        let n = Node {
+            val: val,
+            color: COLORS::RED,
+            idx: nodes.len(),
+            sibs: neighbors
+        };
         nodes.push(n);
     }
 
@@ -314,9 +318,8 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     }
 }
 
-// to see output run with:
-// cargo test -- --nocapture
 
+// to see output run with: cargo test -- --nocapture
 #[cfg(test)]
 mod test {
     use std::io::prelude::*;
