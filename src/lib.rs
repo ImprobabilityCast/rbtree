@@ -24,14 +24,13 @@ enum COLORS {
 struct Node<T> {
 	val: T,
     color: COLORS,
-	idx: usize,
-	sibs: Vec<usize>
+	sibs: [usize; 3]
 }
 
 impl<T: fmt::Debug> fmt::Debug for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "val: {:#?}, idx: {}, color: {:#?}, parent: {}, left: {}, right: {}",
-                self.val, self.idx, self.color, self.sibs[0] as isize, self.sibs[1] as isize,
+        write!(f, "val: {:#?}, color: {:#?}, parent: {}, left: {}, right: {}",
+                self.val, self.color, self.sibs[0] as isize, self.sibs[1] as isize,
                 self.sibs[2] as isize)
     }
 }
@@ -151,15 +150,19 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         return new_idx;
     }
 
-    // links the parent node with the proper child
-    fn link_par2child(nodes: &mut Vec<Node<T>>, child_idx: usize) {
-        let p = nodes[child_idx].sibs[PARENT];
+    // Links the parent node with the new child. Nothing is done with the old child's link.
+    fn replace_child(nodes: &mut Vec<Node<T>>, old_child: usize, new_child: usize) {
+        let p = nodes[old_child].sibs[PARENT];
         if p != EMPTY {
-            if nodes[child_idx].val < nodes[p].val {
-                nodes[p].sibs[LEFT] = child_idx;
+            if nodes[p].sibs[LEFT] == old_child {
+                nodes[p].sibs[LEFT] = new_child;
             } else {
-                nodes[p].sibs[RIGHT] = child_idx;
+                nodes[p].sibs[RIGHT] = new_child;
             }
+        }
+
+        if new_child != EMPTY {
+            nodes[new_child].sibs[PARENT] = p;
         }
     }
 
@@ -173,11 +176,10 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         }
         b.nodes[idx].sibs[LEFT] = right_of_left_idx;
 
-        b.nodes[left_idx].sibs[PARENT] = b.nodes[idx].sibs[PARENT];
+        BTree::replace_child(&mut b.nodes, idx, left_idx);
+
         b.nodes[idx].sibs[PARENT] = left_idx;
         b.nodes[left_idx].sibs[RIGHT] = idx;
-
-        BTree::link_par2child(&mut b.nodes, left_idx);
 
         // set the root if it got shifted
         if idx == b.root_idx {
@@ -195,11 +197,10 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         }
         b.nodes[idx].sibs[RIGHT] = left_of_right_idx;
 
-        b.nodes[right_idx].sibs[PARENT] = b.nodes[idx].sibs[PARENT];
+        BTree::replace_child(&mut b.nodes, idx, right_idx);
+
         b.nodes[idx].sibs[PARENT] = right_idx;
         b.nodes[right_idx].sibs[LEFT] = idx;
-
-        BTree::link_par2child(&mut b.nodes, right_idx);
 
         // set the root if it got shifted
         if idx == b.root_idx {
@@ -259,31 +260,99 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         }
     }
 
-    fn add2list(nodes: &mut Vec<Node<T>>, val: T, neighbors: Vec<usize>) {
-        let n = Node {
-            val: val,
-            color: COLORS::RED,
-            idx: nodes.len(),
-            sibs: neighbors
-        };
-        nodes.push(n);
-    }
-
-    fn parent_idx(b: &BTree<T>, val: &T) -> usize {
-        let mut node = &b.nodes[b.root_idx];
+    // finds idx of val, or parent of val if val not in tree
+    fn find(b: &BTree<T>, val: &T) -> usize {
         let mut idx = b.root_idx;
+        let mut idx_ret;
 
-        while idx != EMPTY {
-            node = &b.nodes[idx];
+         loop {
+            idx_ret = idx;
+            let node = &b.nodes[idx];
 
-            if val.lt(&node.val) {
-                idx = node.sibs[LEFT];
+            idx = if val.lt(&node.val) {
+                node.sibs[LEFT]
             } else {
-                idx = node.sibs[RIGHT];
-            }
+                node.sibs[RIGHT]
+            };
+
+            if idx == EMPTY { break; }
         }
 
-        node.idx
+        idx_ret
+    }
+
+    // makes sure a node's children link to it
+    fn link_with_children(nodes: &mut Vec<Node<T>>, idx: usize) {
+        let left_idx = nodes[idx].sibs[LEFT];
+        if left_idx != EMPTY {
+            nodes[left_idx].sibs[PARENT] = idx;
+        }
+    
+        let right_idx = nodes[idx].sibs[RIGHT];
+        if right_idx != EMPTY {
+            nodes[right_idx].sibs[PARENT] = idx;
+        }
+    }
+
+    fn swap(nodes: &mut Vec<Node<T>>, i: usize, j: usize) {
+        let holder = nodes[j].sibs;
+        nodes[j].sibs = nodes[i].sibs;
+        nodes[i].sibs = holder;
+
+        BTree::link_with_children(nodes, i);
+        BTree::link_with_children(nodes, j);
+
+        // links i to j's parent & vice versa
+        BTree::replace_child(nodes, i, j);
+        BTree::replace_child(nodes, j, i);
+    }
+
+    fn min_in_subtree(nodes: &Vec<Node<T>>, mut idx: usize) -> usize {
+        while nodes[idx].sibs[LEFT] != EMPTY {
+            idx = nodes[idx].sibs[LEFT];
+        }
+        idx
+    }
+
+    // returns a tuple containing the index where readjustment may be required
+    // and the value requested.
+    fn bst_remove(b: &mut BTree<T>, key: T) -> (usize, T) {
+        let idx = BTree::find(&b, &key);
+        let shift;
+        
+        let replacement = if b.nodes[idx].sibs[RIGHT] == EMPTY {
+            shift = b.nodes[idx].sibs[LEFT];
+            shift
+        } else if b.nodes[idx].sibs[LEFT] == EMPTY {
+            shift = b.nodes[idx].sibs[RIGHT];
+            shift
+        } else {
+            // has two children, must find replacement
+            let min = BTree::min_in_subtree(&b.nodes, b.nodes[idx].sibs[RIGHT]);
+            if min != idx {
+                BTree::swap(&mut b.nodes, idx, min);
+            }
+            // need to shift up the old min's child into it's place
+            shift = b.nodes[idx].sibs[RIGHT];
+            
+            min
+        };
+
+        // shift the proper child up into idx's place
+        BTree::replace_child(&mut b.nodes, idx, shift);
+
+        // adjust root, if needed
+        if idx == b.root_idx {
+            b.root_idx = replacement;
+        }
+        
+        // remove idx from the list and replace it with whatever node is at the end of the list
+        let n = b.nodes.swap_remove(idx);
+        // idx's replacement now has and index of idx. Update sibs to reflect this.
+        BTree::link_with_children(&mut b.nodes, idx);
+        BTree::replace_child(&mut b.nodes, idx, idx);
+        
+        return (shift, n.val);
     }
 
     pub fn insert(&mut self, val: T) {
@@ -291,8 +360,9 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         let new_idx = self.nodes.len();
 
         let sibs = if new_idx > 0 {
-            let idx = BTree::parent_idx(&self, &val);
-            let mut new_sibs = vec![EMPTY; 3];
+            // this will return the parent of where val should go
+            let idx = BTree::find(&self, &val);
+            let mut new_sibs = [EMPTY; 3];
             let node = &mut self.nodes[idx];
 
             new_sibs[PARENT] = idx;
@@ -305,15 +375,52 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
 
             new_sibs
         } else {
-            vec![EMPTY; 3]
+            [EMPTY; 3]
         };
         
-        BTree::add2list(&mut self.nodes, val, sibs);
+        let n = Node {
+            val: val,
+            color: COLORS::RED,
+            sibs: sibs
+        };
+        self.nodes.push(n);
         BTree::balence(self, new_idx);
         debug_assert!(assert_is_rbtree(&self));
     }
 
-    pub fn size(&mut self) -> usize{
+    // key must be in tree
+    pub fn remove(&mut self, key: T) -> T {
+        let idx = BTree::find(&self, &key);
+        let replacement = BTree::get_replacement(&self.nodes, idx);
+        let p = self.nodes[idx].sibs[PARENT];
+
+        if replacement == EMPTY {
+            
+        } else {
+            // only need to shift up one
+            if self.nodes[replacement].sibs[PARENT] == idx {
+                if p != EMPTY {
+                    if self.nodes[p].sibs[LEFT] == idx {
+                        self.nodes[p].sibs[LEFT] = replacement;
+                    } else {
+                        self.nodes[p].sibs[RIGHT] = replacement;
+                    }
+                }
+                self.nodes[replacement].sibs[PARENT] = p;
+            } else {
+                //BTree::replace_neighbors(&mut self.nodes, idx, replacement);
+            }
+        }
+
+        
+
+        // don't remove, because it will shift indexes
+        // TODO: swap removed position with last positoin in vector
+        // then delete last position in vector
+        return key; //self.nodes[idx].val;
+    }
+
+    pub fn size(&self) -> usize{
         self.nodes.len()
     }
 }
@@ -324,6 +431,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
 mod test {
     use std::io::prelude::*;
     use std::io::Result;
+    use std::io::BufReader;
     use std::fs::File;
     use crate::*;
 
@@ -333,18 +441,20 @@ mod test {
 
     fn from_file(name: &str) -> Result<()> {
         let mut b = new_tree::<char>();
-        let mut s = String::new();
-        let mut f = File::open(name)?;
+        let mut line = String::new();
+        let f = File::open(name)?;
+        let mut buf = BufReader::new(f);
 
-        f.read_to_string(&mut s)?;
-        while s.len() > 0 {
-            if let Some(ch) = s.pop() {
-                if DEBUG { println!("inserting: {} to: {:#?}", ch, b); }
-                b.insert(ch);
-            } else {
-                break;
+        buf.read_line(&mut line)?;
+        // line will be empty at the end of the file
+        while b.size() < 150 && line.len() > 0 {
+            while line.len() > 0 {
+                if let Some(ch) = line.pop() {
+                    if DEBUG { println!("inserting: {} to: {:#?}", ch, b); }
+                    b.insert(ch);
+                }
             }
-            println!("size: {}", b.size());
+            buf.read_line(&mut line)?;
         }
         assert_is_rbtree::<char>(&b);
 
