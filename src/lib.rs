@@ -528,21 +528,22 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     }
 
     fn case_nephew_right_red(b: &mut BTree<T>, idx: usize, sib: usize) {
-        if b.nodes[idx].left == EMPTY {
+        if b.nodes[idx].right == sib {
             BTree::left_rotate(b, idx);
+            let neph = b.nodes[sib].right;
+            b.nodes[neph].color = BLACK;
         } else {
             BTree::right_rotate(b, idx);
+            let neph = b.nodes[sib].left;
+            b.nodes[neph].color = BLACK;
         }
         let holder = b.nodes[idx].color;
         b.nodes[idx].color = b.nodes[sib].color;
         b.nodes[sib].color = holder;
-
-        let neph = b.nodes[sib].right;
-        b.nodes[neph].color = BLACK;
     }
 
-    fn get_non_empty_child(nodes: &Vec<Node<T>>, idx: usize) -> usize {
-        if nodes[idx].left == EMPTY {
+    fn get_sib(nodes: &Vec<Node<T>>, idx: usize, shift: usize) -> usize {
+        if nodes[idx].left == shift {
             nodes[idx].right
         } else {
             nodes[idx].left
@@ -550,14 +551,16 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     }
 
     // takes parent of thing removed's black child
-    fn balence_remove(b: &mut BTree<T>, mut idx: usize) {
+    fn balence_remove(b: &mut BTree<T>, mut idx: usize, mut shift: usize) {
 
         while idx != EMPTY {
-            println!("balence remove: b: {:#?}, idx: {}", b, idx);
-            let sib = BTree::get_non_empty_child(&b.nodes, idx);
+            println!("balence remove: b: {:#?}, idx: {}, shift: {}",
+                    b, idx, shift);
+            let sib = BTree::get_sib(&b.nodes, idx, shift);
             if sib == EMPTY {
                 break;
             }
+
             if b.nodes[sib].color == RED {
                 BTree::case_sib_is_red(b, idx, sib);
             } else {
@@ -567,11 +570,18 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
                 if BTree::is_black(&b.nodes, right_nephew)
                         && BTree::is_black(&b.nodes, left_nephew) {
                     println!("both black");
+
+                    if b.root_idx == idx && shift != EMPTY
+                            && right_nephew == left_nephew {
+                        break;
+                    }
+
                     b.nodes[sib].color = RED;
                     if b.nodes[idx].color == RED {
                         b.nodes[idx].color = BLACK;
                         break;
                     }
+                    shift = idx;
                     idx = b.nodes[idx].parent;
                 } else if BTree::is_black(&b.nodes, right_nephew) {
                     println!("right neph black");
@@ -620,15 +630,17 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         let res = BTree::bst_remove(self, key);
         // println!("step1: {:#?}", self);
 
-        // if res.color == BLACK {
-        //     if BTree::is_black(&self.nodes, res.shifted) {
-        //         BTree::balence_remove(self, res.parent);
-        //     } else {
-        //         self.nodes[res.shifted].color = BLACK;
-        //     }
-        // }
+        // was the node spliced out black
+        if res.color == BLACK {
+            if BTree::is_black(&self.nodes, res.shifted) {
+                // replacement is black, must fix
+                BTree::balence_remove(self, res.parent, res.shifted);
+            } else { // replacement is red
+                self.nodes[res.shifted].color = BLACK;
+            }
+        }
         
-        //debug_assert!(assert_all(self));
+        debug_assert!(assert_all(self));
 
         return res.val;
     }
