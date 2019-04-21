@@ -22,7 +22,7 @@ struct Node<T> {
     right: usize
 }
 
-struct RemovedNode<T> {
+struct RemovalData<T> {
     parent: usize,
     shifted: usize,
     color: bool,
@@ -369,16 +369,38 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         }
     }
 
-    // moves src over the top of dest
-    fn one_way_move(nodes: &mut Vec<Node<T>>, src: usize, dest: usize) {
-        println!("before mov: {:#?}", nodes);
-        nodes[src].parent= nodes[dest].parent;
-        nodes[src].left = nodes[dest].left;
-        nodes[src].right = nodes[dest].right;
-        BTree::link_with_children(nodes, src);
-        BTree::replace_child(nodes, dest, src);
-        nodes[src].color = nodes[dest].color;
-        println!("after mov: {:#?}", nodes);
+    // shifts src up into dest's place. dest's other child must be empty
+    fn shift_up(b: &mut BTree<T>, src: usize, dest: usize) -> usize {
+        if src != EMPTY {
+            b.nodes[src].parent = b.nodes[dest].parent;
+        }
+        BTree::replace_child(&mut b.nodes, dest, src);
+
+        if b.root_idx == dest {
+            b.root_idx = src;
+        }
+
+        dest
+    }
+
+    // Moves src over the top of dest, makes dest an orphan.
+    // src must be a leaf
+    fn overwrite(b: &mut BTree<T>, src: usize, dest: usize) -> usize {
+        println!("before mov: {:#?}", b.nodes);
+        if src != EMPTY {
+            b.nodes[src].left = b.nodes[dest].left;
+            b.nodes[src].right = b.nodes[dest].right;
+            b.nodes[src].parent = b.nodes[dest].parent;
+            println!("during mov: {:#?}", b.nodes);
+            BTree::link_with_children(&mut b.nodes, src);
+        }
+        BTree::replace_child(&mut b.nodes, dest, src);
+
+        if b.root_idx == dest {
+            b.root_idx = src;
+        }
+        println!("after mov: {:#?}", b.nodes);
+        dest
     }
 
     fn min_in_subtree(nodes: &Vec<Node<T>>, mut idx: usize) -> usize {
@@ -388,18 +410,11 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         idx
     }
 
-    fn shift_up(nodes: &mut Vec<Node<T>>, child: usize, new_child: usize) -> usize {
-        BTree::replace_child(nodes, child, new_child);
-        if new_child != EMPTY {
-            nodes[new_child].parent = nodes[child].parent;
-        }
-        new_child
-    }
-
     // remove the node from the list, replacing its position with the last
     // member of the list
     fn remove_node(nodes: &mut Vec<Node<T>>, to_remove: usize) -> Node<T> {
         let last = nodes.len() - 1;
+        println!("removing idx: {}", to_remove);
         return if to_remove == last {
             BTree::replace_child(nodes, last, EMPTY);
             nodes.swap_remove(to_remove)
@@ -411,77 +426,87 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         };
     }
 
-    fn bst_remove(b: &mut BTree<T>, key: T) -> RemovedNode<T> {
+    fn min_shift(b: &mut BTree<T>, idx: usize, min: usize, right_of_min: usize) -> usize {
+        let parent = if b.nodes[min].parent == idx {
+            min
+        } else {
+            b.nodes[min].parent
+        };
+
+        if parent == min { // min must be a right child for this to happen
+            b.nodes[min].left = b.nodes[idx].left;
+            b.nodes[min].parent = b.nodes[idx].parent;
+            BTree::replace_child(&mut b.nodes, idx, min);
+            BTree::link_with_children(&mut b.nodes, min);
+            if b.root_idx == idx {
+                b.root_idx = min;
+            }
+        } else {
+            BTree::shift_up(b, right_of_min, min); // min is now orph
+            BTree::overwrite(b, min, idx);  // idx is now orph
+        }
+        return parent;
+    }
+
+    fn bst_remove(b: &mut BTree<T>, key: T) -> RemovalData<T> {
         let idx = BTree::find(&b, &key);
-        let mut par_of_removed = b.nodes[idx].parent;
-        let mut color = b.nodes[idx].color;
-        let mut shift;
-
         println!("removing: {:#?}", key);
+        let mut shift;
+        let mut parent;
+        let color_removed;
 
-        let replacement = if b.nodes[idx].right == EMPTY {
-            println!("right child is empty");
+        if b.nodes[idx].right == EMPTY {
+            println!("right child is empty: {:#?}", b);
             shift = b.nodes[idx].left;
-            BTree::shift_up(&mut b.nodes, idx, shift)
+            parent = b.nodes[idx].parent;
+            color_removed = b.nodes[idx].color;
+            if shift != EMPTY {
+                b.nodes[shift].color = b.nodes[idx].color;
+            }
+            BTree::shift_up(b, shift, idx); // idx is now orph
         } else if b.nodes[idx].left == EMPTY {
-            println!("left child is empty");
+            println!("left child is empty: {:#?}", b);
             shift = b.nodes[idx].right;
-            BTree::shift_up(&mut b.nodes, idx, shift)
+            parent = b.nodes[idx].parent;
+            color_removed = b.nodes[idx].color;
+            if shift != EMPTY {
+                b.nodes[shift].color = b.nodes[idx].color;
+            }
+            BTree::shift_up(b, shift, idx); // idx is now orph
         } else {
             println!("has 2 children");
             println!("tree: {:#?}", b);
             // has two children, must find replacement
             let min = BTree::min_in_subtree(&b.nodes, b.nodes[idx].right);
-            par_of_removed = b.nodes[min].parent;
-            
-            // will need to shift up the old min's child into it's place
             shift = b.nodes[min].right;
-            BTree::replace_child(&mut b.nodes, min, shift);
-            if shift != EMPTY {
-                b.nodes[shift].parent = b.nodes[min].parent;
-            }
-            if min != idx {
-                BTree::one_way_move(&mut b.nodes, min, idx);
-            }
+            parent = BTree::min_shift(b, idx, min, shift);
+            color_removed = b.nodes[min].color;
+            b.nodes[min].color = b.nodes[idx].color;
             
-            color = b.nodes[min].color;
             println!("min: {:#?}", b.nodes[min].val);
-            min
         };
 
-        // adjust root, if needed
-        if idx == b.root_idx && replacement != b.nodes.len() - 1 {
-            b.root_idx = replacement;
-        }
-        if par_of_removed == b.nodes.len() - 1 {
-            if b.nodes.len() - 1 != idx {
-                par_of_removed = idx;
-            } else {
-                par_of_removed = b.root_idx;
-            }
+        // adjust for removal
+        if parent == b.nodes.len() - 1 {
+            parent = idx;
         }
         if shift == b.nodes.len() - 1 {
             shift = idx;
+        }
+        if b.root_idx == b.nodes.len() - 1 {
+            b.root_idx = idx;
         }
         
         // remove idx from the list and replace it with whatever node is at the end of the list
         println!("step0: {:#?}", b);
         let n = BTree::remove_node(&mut b.nodes, idx);
-        println!("step02: {:#?}", b);
+        println!("bst_remove done: {:#?}", b);
         if b.nodes.len() > 0 {
             debug_assert!(assert_is_bst(&b.nodes, b.root_idx));
             debug_assert!(assert_is_dlinked(&b.nodes, b.root_idx));
         }
 
-        let rn = RemovedNode {
-            parent: par_of_removed,
-            shifted: shift,
-            color: color,
-            val: n.val
-        };
-        println!("parent: {}, shifted: {}, color: {}",
-                rn.parent, rn.shifted, rn.color);
-        return rn;
+        return RemovalData {parent: parent, shifted: shift, color: color_removed, val: n.val};
     }
 
 
@@ -593,17 +618,17 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     // key must be in tree
     pub fn remove(&mut self, key: T) -> T {
         let res = BTree::bst_remove(self, key);
-        println!("step1: {:#?}", self);
+        // println!("step1: {:#?}", self);
 
-        if res.color == BLACK {
-            if BTree::is_black(&self.nodes, res.shifted) {
-                BTree::balence_remove(self, res.parent);
-            } else {
-                self.nodes[res.shifted].color = BLACK;
-            }
-        }
+        // if res.color == BLACK {
+        //     if BTree::is_black(&self.nodes, res.shifted) {
+        //         BTree::balence_remove(self, res.parent);
+        //     } else {
+        //         self.nodes[res.shifted].color = BLACK;
+        //     }
+        // }
         
-        debug_assert!(assert_all(self));
+        //debug_assert!(assert_all(self));
 
         return res.val;
     }
