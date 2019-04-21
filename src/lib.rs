@@ -949,4 +949,43 @@ mod test {
 
         assert!(20 == b.remove(20));
     }
+
+    #[test]
+    fn test_remove_leaf() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 17];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
+
+        assert!(17 == b.remove(17));
+    }
+
+    #[test]
+    fn test_remove_root() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 17];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
+
+        assert!(15 == b.remove(15));
+    }
+
+    #[test]
+    fn test_remove_1_child_2() {
+        let mut b = new_tree::<i32>();
+        let arr = [15, 5, 20, 17];
+        let mut idx = 0;
+        while idx < arr.len() {
+            b.insert(arr[idx]);
+            idx += 1;
+        }
+
+        assert!(5 == b.remove(5));
+    }
 }
