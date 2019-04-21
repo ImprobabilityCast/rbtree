@@ -527,16 +527,17 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         BTree::right_rotate(b, sib);
     }
 
+    // note that the left nephew may also be red
     fn case_nephew_right_red(b: &mut BTree<T>, idx: usize, sib: usize) {
-        if b.nodes[idx].right == sib {
+        let neph = if b.nodes[idx].right == sib {
             BTree::left_rotate(b, idx);
-            let neph = b.nodes[sib].right;
-            b.nodes[neph].color = BLACK;
+            b.nodes[sib].right
         } else {
             BTree::right_rotate(b, idx);
-            let neph = b.nodes[sib].left;
-            b.nodes[neph].color = BLACK;
-        }
+            b.nodes[sib].left
+        };
+        
+        b.nodes[neph].color = BLACK;
         let holder = b.nodes[idx].color;
         b.nodes[idx].color = b.nodes[sib].color;
         b.nodes[sib].color = holder;
