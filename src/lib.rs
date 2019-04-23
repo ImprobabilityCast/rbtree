@@ -596,11 +596,11 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         }
     }
 
-    pub fn insert(&mut self, val: T) {
+    pub fn insert(&mut self, key: T) {
         // new elements are appended to the end of the list
         let new_idx = self.nodes.len();
         let mut n = Node {
-            val: val,
+            val: key,
             color: RED,
             parent: EMPTY,
             left: EMPTY,
