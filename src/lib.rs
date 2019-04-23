@@ -386,12 +386,12 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     // Moves src over the top of dest, makes dest an orphan.
     // src must be a leaf
     fn overwrite(b: &mut BTree<T>, src: usize, dest: usize) -> usize {
-        println!("before mov: {:#?}", b.nodes);
+        if DEBUG { println!("before mov: {:#?}", b.nodes); }
         if src != EMPTY {
             b.nodes[src].left = b.nodes[dest].left;
             b.nodes[src].right = b.nodes[dest].right;
             b.nodes[src].parent = b.nodes[dest].parent;
-            println!("during mov: {:#?}", b.nodes);
+            if DEBUG { println!("during mov: {:#?}", b.nodes); }
             BTree::link_with_children(&mut b.nodes, src);
         }
         BTree::replace_child(&mut b.nodes, dest, src);
@@ -399,7 +399,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         if b.root_idx == dest {
             b.root_idx = src;
         }
-        println!("after mov: {:#?}", b.nodes);
+        if DEBUG { println!("after mov: {:#?}", b.nodes); }
         dest
     }
 
@@ -414,7 +414,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     // member of the list
     fn remove_node(nodes: &mut Vec<Node<T>>, to_remove: usize) -> Node<T> {
         let last = nodes.len() - 1;
-        println!("removing idx: {}", to_remove);
+        if DEBUG  { println!("removing idx: {}", to_remove); }
         return if to_remove == last {
             BTree::replace_child(nodes, last, EMPTY);
             nodes.swap_remove(to_remove)
@@ -448,65 +448,83 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
         return parent;
     }
 
-    fn bst_remove(b: &mut BTree<T>, key: T) -> RemovalData<T> {
-        let idx = BTree::find(&b, &key);
-        println!("removing: {:#?}", key);
-        let mut shift;
-        let mut parent;
-        let color_removed;
-
-        if b.nodes[idx].right == EMPTY {
-            println!("right child is empty: {:#?}", b);
-            shift = b.nodes[idx].left;
-            parent = b.nodes[idx].parent;
-            color_removed = b.nodes[idx].color;
-            if shift != EMPTY {
-                b.nodes[shift].color = b.nodes[idx].color;
-            }
-            BTree::shift_up(b, shift, idx); // idx is now orph
-        } else if b.nodes[idx].left == EMPTY {
-            println!("left child is empty: {:#?}", b);
-            shift = b.nodes[idx].right;
-            parent = b.nodes[idx].parent;
-            color_removed = b.nodes[idx].color;
-            if shift != EMPTY {
-                b.nodes[shift].color = b.nodes[idx].color;
-            }
-            BTree::shift_up(b, shift, idx); // idx is now orph
+    fn set_r_data(nodes: &Vec<Node<T>>, idx: usize, shift: usize,
+            r_data: &mut RemovalData<T>) {
+        r_data.shifted = shift;
+        r_data.parent = nodes[idx].parent;
+        r_data.color = if BTree::is_black(nodes, shift) {
+            BLACK
         } else {
-            println!("has 2 children");
-            println!("tree: {:#?}", b);
-            // has two children, must find replacement
-            let min = BTree::min_in_subtree(&b.nodes, b.nodes[idx].right);
-            shift = b.nodes[min].right;
-            parent = BTree::min_shift(b, idx, min, shift);
-            color_removed = b.nodes[min].color;
-            b.nodes[min].color = b.nodes[idx].color;
-            
-            println!("min: {:#?}", b.nodes[min].val);
+            RED
         };
+    }
 
-        // adjust for removal
-        if parent == b.nodes.len() - 1 {
-            parent = idx;
+    fn adjust_for_removal(b: &mut BTree<T>, idx: usize, r_data: &mut RemovalData<T>) {
+        let last = b.nodes.len() - 1;
+        if r_data.parent == last {
+            r_data.parent = idx;
         }
-        if shift == b.nodes.len() - 1 {
-            shift = idx;
+        if r_data.shifted == last {
+            r_data.shifted = idx;
         }
-        if b.root_idx == b.nodes.len() - 1 {
+        if b.root_idx == last {
             b.root_idx = idx;
         }
-        
+    }
+
+    fn bst_remove(b: &mut BTree<T>, key: T) -> RemovalData<T> {
+        let idx = BTree::find(&b, &key);
+        if DEBUG { println!("removing: {:#?}", key); }
+        let mut r_data = RemovalData {
+            parent: EMPTY,
+            shifted: EMPTY,
+            color: RED,
+            val: key
+        };
+
+        if b.nodes[idx].right == EMPTY {
+            if DEBUG { println!("right child is empty: {:#?}", b); }
+            BTree::set_r_data(&b.nodes, idx, b.nodes[idx].left, &mut r_data);
+
+            if r_data.shifted != EMPTY {
+                b.nodes[r_data.shifted].color = b.nodes[idx].color;
+            }
+            BTree::shift_up(b, r_data.shifted, idx); // idx is now orph
+        } else if b.nodes[idx].left == EMPTY {
+            if DEBUG { println!("left child is empty: {:#?}", b); }
+            BTree::set_r_data(&b.nodes, idx, b.nodes[idx].right, &mut r_data);
+
+            if r_data.shifted != EMPTY {
+                b.nodes[r_data.shifted].color = b.nodes[idx].color;
+            }
+            BTree::shift_up(b, r_data.shifted, idx); // idx is now orph
+        } else {
+            if DEBUG {
+                println!("has 2 children");
+                println!("tree: {:#?}", b);
+            }
+            // has two children, must find replacement
+            let min = BTree::min_in_subtree(&b.nodes, b.nodes[idx].right);
+            r_data.shifted = b.nodes[min].right;
+            r_data.parent = BTree::min_shift(b, idx, min, r_data.shifted);
+            r_data.color = b.nodes[min].color;
+            b.nodes[min].color = b.nodes[idx].color;
+            
+            if DEBUG { println!("min: {:#?}", b.nodes[min].val); }
+        };
+
+        BTree::adjust_for_removal(b, idx, &mut r_data);
+
         // remove idx from the list and replace it with whatever node is at the end of the list
-        println!("step0: {:#?}", b);
-        let n = BTree::remove_node(&mut b.nodes, idx);
-        println!("bst_remove done: {:#?}", b);
+        if DEBUG { println!("before remove: {:#?}", b); }
+        r_data.val = BTree::remove_node(&mut b.nodes, idx).val;
+        if DEBUG { println!("bst_remove done: {:#?}", b); }
         if b.nodes.len() > 0 {
             debug_assert!(assert_is_bst(&b.nodes, b.root_idx));
             debug_assert!(assert_is_dlinked(&b.nodes, b.root_idx));
         }
 
-        return RemovalData {parent: parent, shifted: shift, color: color_removed, val: n.val};
+        return r_data;
     }
 
 
@@ -555,8 +573,8 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     fn balence_remove(b: &mut BTree<T>, mut idx: usize, mut shift: usize) {
 
         while idx != EMPTY {
-            println!("balence remove: b: {:#?}, idx: {}, shift: {}",
-                    b, idx, shift);
+            if DEBUG { println!("balence remove: b: {:#?}, idx: {}, shift: {}",
+                    b, idx, shift); }
             let sib = BTree::get_sib(&b.nodes, idx, shift);
             if sib == EMPTY {
                 break;
@@ -570,12 +588,7 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
 
                 if BTree::is_black(&b.nodes, right_nephew)
                         && BTree::is_black(&b.nodes, left_nephew) {
-                    println!("both black");
-
-                    if b.root_idx == idx && shift != EMPTY
-                            && right_nephew == left_nephew {
-                        break;
-                    }
+                    if DEBUG { println!("both black"); }
 
                     b.nodes[sib].color = RED;
                     if b.nodes[idx].color == RED {
@@ -585,10 +598,10 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
                     shift = idx;
                     idx = b.nodes[idx].parent;
                 } else if BTree::is_black(&b.nodes, right_nephew) {
-                    println!("right neph black");
+                    if DEBUG { println!("right neph black"); }
                     BTree::case_nephew_right_black_left_red(b, sib);
                 } else {
-                    println!("right neph red");
+                    if DEBUG { println!("right neph red"); }
                     BTree::case_nephew_right_red(b, idx, sib);
                     break;
                 }
@@ -629,7 +642,6 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
     // key must be in tree
     pub fn remove(&mut self, key: T) -> T {
         let res = BTree::bst_remove(self, key);
-        // println!("step1: {:#?}", self);
 
         // was the node spliced out black
         if res.color == BLACK {
@@ -710,7 +722,7 @@ mod test {
     #[test]
     fn test_ctor_empty() {
         let a = new_tree::<i32>();
-        println!("{:#?}", a);
+        if DEBUG { println!("{:#?}", a); }
     }
 
     #[test]
@@ -737,7 +749,7 @@ mod test {
         let mut i = 0;
         while i < 3 {
             b.insert(i);
-            println!("{:#?}", b);
+            if DEBUG { println!("{:#?}", b); }
             i += 1;
         }
         assert_is_rbtree::<i32>(&b);
@@ -842,7 +854,7 @@ mod test {
         while i < 8 {
             b.insert(i * 7 + (-i % 2) * 13);
             i += 1;
-            println!("{:#?}", b);
+            if DEBUG { println!("{:#?}", b); }
             assert_is_rbtree::<i32>(&b);
         }
     }
@@ -861,7 +873,7 @@ mod test {
     #[test]
     fn test_big() {
         match from_file(".gitignore") {
-            Ok(a) => println!("{:#?}", a),
+            Ok(a) => if DEBUG { println!("{:#?}", a) },
             Err(e) => println!("{:#?}", e)
         }
     }
@@ -869,7 +881,7 @@ mod test {
     #[test]
     fn test_even_bigger() {
         match from_file("src/lib.rs") {
-            Ok(a) => println!("{:#?}", a),
+            Ok(a) => if DEBUG { println!("{:#?}", a) },
             Err(e) => println!("{:#?}", e)
         }
     }
@@ -883,11 +895,11 @@ mod test {
             i += 1;
         }
 
-        println!("before bst_remove: {:#?}", b);
+        if DEBUG { println!("before bst_remove: {:#?}", b); }
 
         BTree::bst_remove(&mut b, 0);
 
-        println!("after bst_remove: {:#?}", b);
+        if DEBUG { println!("after bst_remove: {:#?}", b); }
         assert_is_dlinked(&b.nodes, b.root_idx);
         assert!(size(&b.nodes, b.root_idx) == 19);
         assert_is_bst(&b.nodes, b.root_idx);
@@ -898,7 +910,8 @@ mod test {
         match from_file(".gitignore") {
             Ok(mut a) => {
                 while a.size() > 0 {
-                    println!("{:#?}", a.remove(a.nodes[a.root_idx].val));
+                    let v = a.remove(a.nodes[a.root_idx].val);
+                    if DEBUG { println!("{:#?}", v); }
                 }
             },
             Err(e) => println!("{:#?}", e)
@@ -917,7 +930,7 @@ mod test {
 
         while idx > 0 {
             idx -= 1;
-            println!("idx: {}", idx);
+            if DEBUG { println!("idx: {}", idx); }
             b.remove(arr[idx]);
         }
     }
@@ -932,8 +945,8 @@ mod test {
         }
 
         while b.size() > 0 {
-            println!("successfully removed: {:#?}",
-                    b.remove(b.nodes[b.root_idx].val));
+            let v = b.remove(b.nodes[b.root_idx].val);
+            if DEBUG { println!("successfully removed: {:#?}", v); }
         }
     }
 
