@@ -576,6 +576,8 @@ impl<T: PartialOrd + fmt::Debug> BTree<T> {
             if DEBUG { println!("balence remove: b: {:#?}, idx: {}, shift: {}",
                     b, idx, shift); }
             let sib = BTree::get_sib(&b.nodes, idx, shift);
+            // If sib is empty, then shift must also be empty,
+            // thus the tree is already balenced.
             if sib == EMPTY {
                 break;
             }
